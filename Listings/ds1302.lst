@@ -1,0 +1,337 @@
+C51 COMPILER V9.60.0.0   DS1302                                                            05/10/2022 23:39:21 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE DS1302
+OBJECT MODULE PLACED IN .\Objects\ds1302.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE src\driver\ds1302.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\src;.\src\app;.\sr
+                    -c\driver;.\src\include) DEBUG OBJECTEXTEND PRINT(.\Listings\ds1302.lst) OBJECT(.\Objects\ds1302.obj)
+
+line level    source
+
+   1          #include "ds1302.h"
+   2          
+   3          
+   4          /**************  全局变量定义  *************************************/
+   5          
+   6          // 因为51单片机的设计本身RAM比较少而Flash稍微多一些，像这里定义的数组内部
+   7          // 的内容是不会变的（常量数组），我们就可以使用code关键字，让编译器帮我们
+   8          // 把这个数组放在flash中而不是ram中，这样做可以省一些ram。
+   9          //unsigned char code READ_RTC_ADDR[7] = {0x81, 0x83, 0x85, 0x87, 0x89, 0x8b, 0x8d}; 
+  10          //unsigned char code WRITE_RTC_ADDR[7] = {0x80, 0x82, 0x84, 0x86, 0x88, 0x8a, 0x8c};
+  11          //unsigned char time[7];                // 用来存储读取的时间的，格式是：秒分时日月周年
+  12          
+  13          // 定义了一个全局变量mytime，mytime是time_t类型的，所以mytime是一个结构体
+  14          // 变量，代表一个具体的时间，要占一定的内存。
+  15          struct time_t mytime;
+  16          
+  17          
+  18          // 有用函数
+  19          static void delay(void)
+  20          {
+  21   1              unsigned char i;
+  22   1              for (i=0; i<3; i++);
+  23   1      }
+  24          
+  25          
+  26          // 向ds1302的内部寄存器addr写入一个值value
+  27          static void ds1302_write_reg(unsigned char addr, unsigned char value)
+  28          {
+  29   1              unsigned char i = 0;
+  30   1              unsigned char dat = 0;
+  31   1      
+  32   1              // 第1部分: 时序起始
+  33   1              SCLK = 0;
+  34   1              delay();
+  35   1              RST = 0;
+  36   1              delay();
+  37   1              RST = 1;                // SCLK为低时，RST由低变高，意味着一个大的周期的开始
+  38   1              delay();
+  39   1              // 第2部分: 写入第1字节，addr
+  40   1              for (i=0; i<8; i++)
+  41   1              {
+  42   2                      dat = addr & 0x01;              // SPI是从低位开始传输的
+  43   2                      DSIO = dat;                             // 把要发送的bit数据丢到IO引脚上去准备好
+  44   2                      SCLK = 1;                               // 制造上升沿，让DS1302把IO上的值读走
+  45   2                      delay();                                // 读走之后，一个小周期就完了
+  46   2                      SCLK = 0;                               // 把SCLK拉低，是为了给下一个小周期做准备
+  47   2                      delay();
+  48   2                      addr >>= 1;                             // 把addr右移一位
+  49   2              }
+  50   1              // 第3部分: 写入第2字节，value
+  51   1              for (i=0; i<8; i++)
+  52   1              {
+  53   2                      dat = value & 0x01;             // SPI是从低位开始传输的
+  54   2                      DSIO = dat;                             // 把要发送的bit数据丢到IO引脚上去准备好
+C51 COMPILER V9.60.0.0   DS1302                                                            05/10/2022 23:39:21 PAGE 2   
+
+  55   2                      SCLK = 1;                               // 制造上升沿，让DS1302把IO上的值读走
+  56   2                      delay();                                // 读走之后，一个小周期就完了
+  57   2                      SCLK = 0;                               // 把SCLK拉低，是为了给下一个小周期做准备
+  58   2                      delay();
+  59   2                      value = value >> 1;             // 把addr右移一位
+  60   2              }
+  61   1              // 第4部分: 时序结束
+  62   1              SCLK = 0;                                       // SCLK拉低为了后面的周期时初始状态是对的
+  63   1              delay();
+  64   1              RST = 0;                                        // RST拉低意味着一个大周期的结束
+  65   1              delay();
+  66   1      }
+  67          
+  68          
+  69          // 从ds1302的内部寄存器addr读出一个值，作为返回值
+  70          static unsigned char ds1302_read_reg(unsigned char addr)
+  71          {
+  72   1              unsigned char i = 0;
+  73   1              unsigned char dat = 0;          // 用来存储读取到的一字节数据的
+  74   1              unsigned char tmp = 0;
+  75   1      
+  76   1              // 第1部分: 时序起始
+  77   1              SCLK = 0;
+  78   1              delay();
+  79   1              RST = 0;
+  80   1              delay();
+  81   1              RST = 1;                // SCLK为低时，RST由低变高，意味着一个大的周期的开始
+  82   1              delay();
+  83   1              // 第2部分: 写入要读取的寄存器地址，addr
+  84   1              for (i=0; i<8; i++)
+  85   1              {
+  86   2                      dat = addr & 0x01;              // SPI是从低位开始传输的
+  87   2                      DSIO = dat;                             // 把要发送的bit数据丢到IO引脚上去准备好
+  88   2                      SCLK = 1;                               // 制造上升沿，让DS1302把IO上的值读走
+  89   2                      delay();                                // 读走之后，一个小周期就完了
+  90   2                      SCLK = 0;                               // 把SCLK拉低，是为了给下一个小周期做准备
+  91   2                      delay();
+  92   2                      addr >>= 1;                             // 把addr右移一位
+  93   2              }
+  94   1              // 第3部分: 读出一字节DS1302返回给我们的值
+  95   1              dat = 0;
+  96   1              for (i=0; i<8; i++)
+  97   1              {
+  98   2              // 在前面向ds1302写入addr的最后一个bit后，ds1302就会将读取到的寄存器值
+  99   2              // 的第一个bit放入到IO引脚上，所以我们应该先读取IO再制造下降沿然后继续
+ 100   2              // 读取下一个bit
+ 101   2                      tmp = DSIO;
+ 102   2                      dat |= (tmp << i);              // 读出来的数值是低位在前的
+ 103   2                      SCLK = 1;                               // 由于上面SCLK是低，所以要先拉到高
+ 104   2                      delay();
+ 105   2                      SCLK = 0;                               // 拉低SCLK制造一个下降沿
+ 106   2                      delay();
+ 107   2              }
+ 108   1              // 第4部分: 时序结束
+ 109   1              SCLK = 0;                                       // SCLK拉低为了后面的周期时初始状态是对的
+ 110   1              delay();
+ 111   1              RST = 0;                                        // RST拉低意味着一个大周期的结束
+ 112   1              delay();
+ 113   1      
+ 114   1              // 第5部分：解决读取时间是ff的问题
+ 115   1              DSIO = 0;
+ 116   1      
+C51 COMPILER V9.60.0.0   DS1302                                                            05/10/2022 23:39:21 PAGE 3   
+
+ 117   1              return dat;
+ 118   1      }
+ 119          
+ 120          /*
+ 121          void ds1302_read_time(void)
+ 122          {
+ 123                  unsigned char i = 0;
+ 124                  for (i=0; i<7; i++)
+ 125                  {
+ 126                          time[i] = ds1302_read_reg(READ_RTC_ADDR[i]);
+ 127                  }
+ 128          }
+ 129          */
+ 130          
+ 131          // 实现2个子函数，分别实现从bcd码转十六进制，和十六进制转bcd码
+ 132          unsigned char bcd2hex(unsigned char bcd)
+ 133          {
+ 134   1              // 譬如我们现在要把bcd码0x24转成24（0x18）
+ 135   1              // 思路就是分2步
+ 136   1              // 第1步，先从0x24得到2和4
+ 137   1              // ((bcd & 0xf0) >> 4) 高4位，也就是2
+ 138   1              // (bcd & 0x0f) 低4位，也就是4
+ 139   1              // 第2步，由2*10+4得到24
+ 140   1              return (((bcd & 0xf0) >> 4) * 10 + (bcd & 0x0f));
+ 141   1      }
+ 142          
+ 143          unsigned char hex2bcd(unsigned char hex)
+ 144          {
+ 145   1              // 就是要把24转成0x24
+ 146   1              // 第一步，先由24得到2和4
+ 147   1              // (24 / 10) 就是2， (24 % 10)就是4
+ 148   1              // 第二步，再组合成0x24
+ 149   1              return (((hex / 10) << 4) | (hex % 10));
+ 150   1      }
+ 151          
+ 152          
+ 153          
+ 154          // 用结构体方式来实现的读取时间的函数
+ 155          // READ_RTC_ADDR格式是：秒分时日月周年
+ 156          void ds1302_read_time_struct(void)
+ 157          {
+ 158   1              mytime.year =  bcd2hex(ds1302_read_reg(REG_ADDR_YEAR_READ)) + 2000;
+ 159   1              mytime.mon      =  bcd2hex(ds1302_read_reg(REG_ADDR_MON_READ));
+ 160   1              mytime.date =  bcd2hex(ds1302_read_reg(REG_ADDR_DATE_READ));
+ 161   1              mytime.hour =  bcd2hex(ds1302_read_reg(REG_ADDR_HOUR_READ));
+ 162   1              mytime.min      =  bcd2hex(ds1302_read_reg(REG_ADDR_MIN_READ));
+ 163   1              mytime.sec      =  bcd2hex(ds1302_read_reg(REG_ADDR_SEC_READ));
+ 164   1              mytime.day      =  bcd2hex(ds1302_read_reg(REG_ADDR_DAY_READ));
+ 165   1      }
+ 166          
+ 167          // 本函数用于向DS1302中写入一个时间t1
+ 168          void ds1302_write_time_struct(struct time_t t1)
+ 169          {
+ 170   1              ds1302_write_reg(0x8E, 0x00);   // 去掉写保护
+ 171   1              // 依次写各个时间寄存器
+ 172   1              ds1302_write_reg(REG_ADDR_YEAR_WRITE, (hex2bcd(t1.year - 2000)));
+ 173   1              ds1302_write_reg(REG_ADDR_MON_WRITE, (hex2bcd(t1.mon)));
+ 174   1              ds1302_write_reg(REG_ADDR_DATE_WRITE, (hex2bcd(t1.date)));
+ 175   1              ds1302_write_reg(REG_ADDR_HOUR_WRITE, (hex2bcd(t1.hour)));
+ 176   1              ds1302_write_reg(REG_ADDR_MIN_WRITE, (hex2bcd(t1.min)));
+ 177   1              ds1302_write_reg(REG_ADDR_SEC_WRITE, (hex2bcd(t1.sec)));
+ 178   1              ds1302_write_reg(REG_ADDR_DAY_WRITE, (hex2bcd(t1.day)));
+C51 COMPILER V9.60.0.0   DS1302                                                            05/10/2022 23:39:21 PAGE 4   
+
+ 179   1      
+ 180   1              ds1302_write_reg(0x8E, 0x80);   // 打开写保护
+ 181   1      }
+ 182          
+ 183          // 只修改年份
+ 184          void ds1302_write_time_year(unsigned int year)
+ 185          {
+ 186   1              ds1302_write_reg(0x8E, 0x00);   // 去掉写保护
+ 187   1              // 依次写各个时间寄存器
+ 188   1              ds1302_write_reg(REG_ADDR_YEAR_WRITE, (hex2bcd(year - 2000)));
+ 189   1      
+ 190   1              ds1302_write_reg(0x8E, 0x80);   // 打开写保护
+ 191   1      }
+ 192          
+ 193          // 只修改月份
+ 194          void ds1302_write_time_mon(unsigned char mon)
+ 195          {
+ 196   1              ds1302_write_reg(0x8E, 0x00);   // 去掉写保护
+ 197   1              // 依次写各个时间寄存器
+ 198   1              ds1302_write_reg(REG_ADDR_MON_WRITE, (hex2bcd(mon)));
+ 199   1      
+ 200   1              ds1302_write_reg(0x8E, 0x80);   // 打开写保护
+ 201   1      }
+ 202          
+ 203          // 只修改日
+ 204          void ds1302_write_time_date(unsigned char date)
+ 205          {
+ 206   1              ds1302_write_reg(0x8E, 0x00);   // 去掉写保护
+ 207   1              // 依次写各个时间寄存器
+ 208   1              ds1302_write_reg(REG_ADDR_DATE_WRITE, (hex2bcd(date)));
+ 209   1      
+ 210   1              ds1302_write_reg(0x8E, 0x80);   // 打开写保护
+ 211   1      }
+ 212          
+ 213          // 只修改小时数
+ 214          void ds1302_write_time_hour(unsigned char hour)
+ 215          {
+ 216   1              ds1302_write_reg(0x8E, 0x00);   // 去掉写保护
+ 217   1              // 依次写各个时间寄存器
+ 218   1              ds1302_write_reg(REG_ADDR_HOUR_WRITE, (hex2bcd(hour)));
+ 219   1      
+ 220   1              ds1302_write_reg(0x8E, 0x80);   // 打开写保护
+ 221   1      }
+ 222          
+ 223          // 只修改分钟数
+ 224          void ds1302_write_time_min(unsigned char min)
+ 225          {
+ 226   1              ds1302_write_reg(0x8E, 0x00);   // 去掉写保护
+ 227   1              // 依次写各个时间寄存器
+ 228   1              ds1302_write_reg(REG_ADDR_MIN_WRITE, (hex2bcd(min)));
+ 229   1      
+ 230   1              ds1302_write_reg(0x8E, 0x80);   // 打开写保护
+ 231   1      }
+ 232          
+ 233          // 只修改秒数
+ 234          void ds1302_write_time_sec(unsigned char sec)
+ 235          {
+ 236   1              ds1302_write_reg(0x8E, 0x00);   // 去掉写保护
+ 237   1              // 依次写各个时间寄存器
+ 238   1              ds1302_write_reg(REG_ADDR_SEC_WRITE, (hex2bcd(sec)));
+ 239   1      
+ 240   1              ds1302_write_reg(0x8E, 0x80);   // 打开写保护
+C51 COMPILER V9.60.0.0   DS1302                                                            05/10/2022 23:39:21 PAGE 5   
+
+ 241   1      }
+ 242          
+ 243          
+ 244          /*
+ 245          void ds1302_write_time(void)
+ 246          {
+ 247                  unsigned char i = 0;
+ 248          
+ 249                  // 准备好要写入的时间
+ 250                  time[0] = 0x24;                         // 对应 24s
+ 251                  time[1] = 0x39;                         // 对应 39m
+ 252                  time[2] = 0x11;                         // 对应 11h
+ 253                  time[3] = 0x06;                         // 对应 6日
+ 254                  time[4] = 0x12;                         // 对应 12月
+ 255                  time[5] = 0x02;                         // 对应 星期2
+ 256                  time[6] = 0x16;                         // 对应 2016年
+ 257          
+ 258                  ds1302_write_reg(0x8E, 0x00);   // 去掉写保护
+ 259                  for (i=0; i<7; i++)
+ 260                  {
+ 261                          ds1302_write_reg(WRITE_RTC_ADDR[i], time[i]);
+ 262                  }
+ 263                  ds1302_write_reg(0x8E, 0x80);   // 打开写保护
+ 264          }
+ 265          */
+ 266          
+ 267          
+ 268          /*
+ 269          // 通过串口将7个时间以二进制方式输出在串口助手上
+ 270          void debug_print_time(void)
+ 271          {
+ 272                  unsigned char i = 0;
+ 273          
+ 274                  while (1)
+ 275                  {
+ 276                          // 1 从DS1302读取时间
+ 277                          ds1302_read_time();
+ 278          
+ 279                          // 2 for循环内打印一组7个时间
+ 280                          for (i=0; i<7; i++)
+ 281                          {
+ 282                                  uart_send_byte(time[i]);        
+ 283                          }
+ 284          
+ 285                          // 3 延时900ms后再继续下个周期
+ 286                          delay900ms();
+ 287                  }       
+ 288          }
+ 289          */
+ 290          
+ 291          
+ 292          
+ 293          
+ 294          
+ 295          
+ 296          
+ 297          
+ 298          
+ 299          
+ 300          
+ 301          
+ 302          
+C51 COMPILER V9.60.0.0   DS1302                                                            05/10/2022 23:39:21 PAGE 6   
+
+ 303          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    527    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      8       8
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

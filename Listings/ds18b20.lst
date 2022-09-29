@@ -1,0 +1,185 @@
+C51 COMPILER V9.60.0.0   DS18B20                                                           05/10/2022 23:39:21 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE DS18B20
+OBJECT MODULE PLACED IN .\Objects\ds18b20.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE src\driver\ds18b20.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\src;.\src\app;.\s
+                    -rc\driver;.\src\include) DEBUG OBJECTEXTEND PRINT(.\Listings\ds18b20.lst) OBJECT(.\Objects\ds18b20.obj)
+
+line level    source
+
+   1          #include "ds18b20.h"  
+   2          #include <intrins.h>
+   3          
+   4          #include "uart.h"
+   5          
+   6          
+   7          /******* 延时函数 *******************/
+   8          static void delay750us(void)   //误差 -0.217013888889us
+   9          {
+  10   1          unsigned char a,b;
+  11   1          for(b=198;b>0;b--)
+  12   1              for(a=2;a>0;a--);
+  13   1      }
+  14          
+  15          static void delay15us(void)   //误差 -0.894097222222us
+  16          {
+  17   1          unsigned char a;
+  18   1          for(a=4;a>0;a--);
+  19   1      }
+  20          
+  21          static void delay70us(void)   //误差 -0.555555555556us
+  22          {
+  23   1          unsigned char a,b;
+  24   1          for(b=1;b>0;b--)
+  25   1              for(a=28;a>0;a--);
+  26   1      }
+  27          
+  28          static void delay45us(void)   //误差 -0.512152777778us
+  29          {
+  30   1          unsigned char a;
+  31   1          for(a=18;a>0;a--);
+  32   1      }
+  33          
+  34          static void delay1ms(void)   //误差 -0.651041666667us
+  35          {
+  36   1          unsigned char a,b;
+  37   1          for(b=4;b>0;b--)
+  38   1              for(a=113;a>0;a--);
+  39   1      }
+  40          
+  41          static void delay750ms(void)   //误差 -0.000000000183us
+  42          {
+  43   1          unsigned char a,b,c;
+  44   1          for(c=147;c>0;c--)
+  45   1              for(b=127;b>0;b--)
+  46   1                  for(a=17;a>0;a--);
+  47   1          _nop_();  //if Keil,require use intrins.h
+  48   1      }
+  49          
+  50          /****** 低层时序 *********************************************/
+  51          
+  52          // 返回0则表示初始化成功，返回1则表示初始化失败
+  53          static unsigned char Ds18b20Init(void)
+  54          {
+C51 COMPILER V9.60.0.0   DS18B20                                                           05/10/2022 23:39:21 PAGE 2   
+
+  55   1              unsigned char i = 0;
+  56   1      
+  57   1              DATA = 0;                       //将总线拉低480us~960us
+  58   1              delay750us();           // 实际延时750us，符合480-960之间的条件
+  59   1              DATA = 1;                       //然后拉高总线，如果DS18B20做出反应会将在15us~60us后总线拉低
+  60   1      
+  61   1              i = 0;
+  62   1              while (DATA)    //等待DS18B20拉低总线
+  63   1              {
+  64   2                      i++;
+  65   2                      if(i>5)//等待>5MS
+  66   2                      {
+  67   3                              return 1;//初始化失败
+  68   3                      }
+  69   2                      delay15us();    
+  70   2              }
+  71   1              return 0;//初始化成功
+  72   1      }
+  73          
+  74          
+  75          static void Ds18b20WriteByte(unsigned char dat)
+  76          {
+  77   1              unsigned int i = 0, j = 0;
+  78   1      
+  79   1              for (j=0; j<8; j++)
+  80   1              {
+  81   2                      DATA = 0;                       //每写入一位数据之前先把总线拉低1us
+  82   2                      i++;
+  83   2                      DATA = dat & 0x01;      //然后写入一个数据，从最低位开始
+  84   2                      delay70us();                    // 时序要求最少60us
+  85   2                      DATA = 1;                               //然后释放总线，至少1us给总线恢复时间才能接着写入第二个数值
+  86   2                      dat >>= 1;
+  87   2              }
+  88   1      }
+  89          
+  90          
+  91          static unsigned char Ds18b20ReadByte()
+  92          {
+  93   1              unsigned char byte = 0, bi = 0;
+  94   1              unsigned int i = 0, j = 0;
+  95   1                      
+  96   1              for (j=8; j>0; j--)
+  97   1              {
+  98   2                      DATA = 0;               //先将总线拉低1us
+  99   2                      i++;
+ 100   2                      DATA = 1;               //然后释放总线
+ 101   2                      i++;
+ 102   2                      i++;                    //延时6us等待数据稳定
+ 103   2                      bi = DATA;              //读取数据，从最低位开始读取
+ 104   2                      /*将byte左移一位，然后与上右移7位后的bi，注意移动之后移掉那位补0。*/
+ 105   2                      byte = (byte >> 1) | (bi << 7); 
+ 106   2                      //byte |= (bi << (8-j));
+ 107   2                      delay45us();
+ 108   2              }                               
+ 109   1              return byte;
+ 110   1      }
+ 111          
+ 112          
+ 113          /*************** 高层时序 *************************************/
+ 114          static void Ds18b20ChangTemp(void)
+ 115          {
+ 116   1              Ds18b20Init();
+C51 COMPILER V9.60.0.0   DS18B20                                                           05/10/2022 23:39:21 PAGE 3   
+
+ 117   1              delay1ms();
+ 118   1              Ds18b20WriteByte(0xcc);         //跳过ROM操作命令                
+ 119   1              Ds18b20WriteByte(0x44);     //温度转换命令
+ 120   1              delay750ms();   //等待转换成功，而如果你是一直刷着的话，就不用这个延时了 
+ 121   1      }
+ 122          
+ 123          static void Ds18b20ReadTempCom(void)
+ 124          {       
+ 125   1              Ds18b20Init();
+ 126   1              delay1ms();
+ 127   1              Ds18b20WriteByte(0xcc);  //跳过ROM操作命令
+ 128   1              Ds18b20WriteByte(0xbe);  //发送读取温度命令
+ 129   1      }
+ 130          
+ 131          
+ 132          double Ds18b20ReadTemp(void)
+ 133          {
+ 134   1              unsigned int temp = 0;
+ 135   1              unsigned char tmh = 0, tml = 0;
+ 136   1              double t = 0;
+ 137   1      
+ 138   1      
+ 139   1              Ds18b20ChangTemp();                             //先写入转换命令
+ 140   1              Ds18b20ReadTempCom();                   //然后等待转换完后发送读取温度命令
+ 141   1              tml = Ds18b20ReadByte();                //读取温度值共16位，先读低字节
+ 142   1              tmh = Ds18b20ReadByte();                //再读高字节
+ 143   1      //      temp = tmh;
+ 144   1      //      temp <<= 8;
+ 145   1      //      temp |= tml;
+ 146   1              temp = tml | (tmh << 8);
+ 147   1      
+ 148   1              t = temp * 0.0625;
+ 149   1      
+ 150   1              return t;
+ 151   1      }
+ 152           
+ 153          
+ 154          
+ 155          
+ 156          
+ 157          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    382    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----       3
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

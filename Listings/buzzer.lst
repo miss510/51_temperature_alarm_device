@@ -1,0 +1,128 @@
+C51 COMPILER V9.60.0.0   BUZZER                                                            05/10/2022 23:39:21 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE BUZZER
+OBJECT MODULE PLACED IN .\Objects\buzzer.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE src\driver\buzzer.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\src;.\src\app;.\sr
+                    -c\driver;.\src\include) DEBUG OBJECTEXTEND PRINT(.\Listings\buzzer.lst) OBJECT(.\Objects\buzzer.obj)
+
+line level    source
+
+   1          #include "buzzer.h"
+   2          
+   3          
+   4          static unsigned int count;
+   5          static unsigned char flag = 0;                  // flag = 0表示有声音，flag = 1表示没声音
+   6          //static int xKHz  = 1;                                 // 默认是1KHz
+   7          static unsigned char th0;
+   8          static unsigned char tl0;
+   9          /*
+  10          // timer0的isr，在这里对引脚进行电平反转以让蜂鸣器响
+  11          void timer0_isr(void) interrupt 1 using 1
+  12          {
+  13                  TL0 = N % 256;
+  14                  TH0 = N / 256;
+  15          
+  16                  if (count-- == 0)
+  17                  {
+  18                          // 说明到了翻转的时候了
+  19                  //      count = 600;
+  20          
+  21                          if (flag == 0)
+  22                          {
+  23                                  // 之前是处于有声音的，说明本次是从有声音到无声音的翻转
+  24                                  flag = 1;
+  25                                  count = TIMELEN*10;             // 这里的count数量决定蜂鸣器不响的时间长短
+  26                          }
+  27                          else
+  28                          {
+  29                                  // 之前是处于没声音的，说明本次是从没声音到有声音的翻转
+  30                                  flag = 0;
+  31                                  BUZZER = !BUZZER;
+  32                                  count = TIMELEN;                // 这里的count数量决定蜂鸣器响的时间长短
+  33                          }
+  34                  }
+  35                  else
+  36                  {
+  37                          // 常规情况，也就是不反转时
+  38                          if (flag == 0)
+  39                          {
+  40                                  BUZZER = !BUZZER;                       // 4999次声音
+  41                          }
+  42                          else
+  43                          {
+  44                                  // 空的就可以，因为不进行任何IO操作就是没声音
+  45                          }
+  46                  }
+  47                  
+  48          }
+  49          */
+  50          
+  51          // 控制蜂鸣器响的isr
+  52          void timer0_isr(void) interrupt 1 using 1
+  53          {
+  54   1              TH0 = th0;
+C51 COMPILER V9.60.0.0   BUZZER                                                            05/10/2022 23:39:21 PAGE 2   
+
+  55   1              TL0 = tl0;
+  56   1      
+  57   1              // 常规情况，也就是不反转时
+  58   1              if (flag == 0)
+  59   1              {
+  60   2                      BUZZER = !BUZZER;                       // 响
+  61   2              }
+  62   1      }
+  63          
+  64          // buzzer的初始化函数
+  65          void buzzer_init(void)
+  66          {
+  67   1              TMOD = 0x01;            // T0使用16bit定时器
+  68   1              tl0 = (65535 - (500 / 1)) % 256;
+  69   1              th0 = (65535 - (500 / 1)) / 256;
+  70   1      
+  71   1              TH0 = th0;
+  72   1              TL0 = tl0;
+  73   1      
+  74   1              TR0 = 1;                        // T0打开开始计数
+  75   1              ET0 = 1;                        // T0中断允许
+  76   1              EA = 1;                         // 总中断允许
+  77   1      
+  78   1              BUZZER = 1;
+  79   1      
+  80   1              // flag=1，默认蜂鸣器不响
+  81   1              flag = 1;
+  82   1      
+  83   1      //      xKHz = 1;                       // 默认是4Khz
+  84   1      }
+  85          
+  86          void buzzer_start(void)
+  87          {
+  88   1              flag = 0;
+  89   1      }
+  90          
+  91          void buzzer_stop(void)
+  92          {
+  93   1              flag = 1;
+  94   1      }
+  95          
+  96          void buzzer_freq_set(unsigned char tmp)
+  97          {
+  98   1              tl0 = (65535 - (500 / tmp)) % 256;
+  99   1              th0 = (65535 - (500 / tmp)) / 256;
+ 100   1      }
+ 101          
+ 102          
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    136    ----
+   CONSTANT SIZE    =   ----    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =      5       1
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)

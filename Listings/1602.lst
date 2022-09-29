@@ -1,0 +1,157 @@
+C51 COMPILER V9.60.0.0   1602                                                              05/10/2022 23:39:21 PAGE 1   
+
+
+C51 COMPILER V9.60.0.0, COMPILATION OF MODULE 1602
+OBJECT MODULE PLACED IN .\Objects\1602.obj
+COMPILER INVOKED BY: C:\Keil_v5\C51\BIN\C51.EXE src\driver\1602.c OPTIMIZE(8,SPEED) BROWSE INCDIR(.\src;.\src\app;.\src\
+                    -driver;.\src\include) DEBUG OBJECTEXTEND PRINT(.\Listings\1602.lst) OBJECT(.\Objects\1602.obj)
+
+line level    source
+
+   1          #include "1602.h"
+   2          
+   3          
+   4          
+   5          // 对LCD1602的底层以及高层时序做封装
+   6          
+   7          
+   8          
+   9          
+  10          /************ 低层时序 ********************************/
+  11          static void Read_Busy()           //忙检测函数，判断bit7是0，允许执行；1禁止
+  12          {
+  13   1          unsigned char sta;      //
+  14   1          LCD1602_DB = 0xff;
+  15   1          LCD1602_RS = 0;
+  16   1          LCD1602_RW = 1;
+  17   1          do
+  18   1          {
+  19   2              LCD1602_EN = 1;
+  20   2              sta = LCD1602_DB;
+  21   2              LCD1602_EN = 0;    //使能，用完就拉低，释放总线
+  22   2          }while(sta & 0x80);
+  23   1      }
+  24          
+  25          static void Lcd1602_Write_Cmd(unsigned char cmd)     //写命令
+  26          {
+  27   1          Read_Busy();
+  28   1          LCD1602_RS = 0;
+  29   1          LCD1602_RW = 0;     
+  30   1          LCD1602_DB = cmd;
+  31   1          LCD1602_EN = 1;
+  32   1          LCD1602_EN = 0;    
+  33   1      }
+  34          
+  35          static void Lcd1602_Write_Data(unsigned char dat)   //写数据
+  36          {
+  37   1            Read_Busy();
+  38   1            LCD1602_RS = 1;
+  39   1            LCD1602_RW = 0;
+  40   1            LCD1602_DB = dat;
+  41   1            LCD1602_EN = 1;
+  42   1            LCD1602_EN = 0;
+  43   1      }
+  44          
+  45          /************* 高层时序 ******************************/
+  46          // 本函数用来设置当前光标位置，其实就是设置当前正在编辑的位置，
+  47          // 其实就是内部的数据地址指针，其实就是RAM显存的偏移量
+  48          // x范围是0-15，y=0表示上面一行，y=1表示下面一行
+  49          void LcdSetCursor(unsigned char x,unsigned char y)  //坐标显示
+  50          {
+  51   1          unsigned char addr;
+  52   1          if(y == 0)
+  53   1              addr = 0x00 + x;
+  54   1          else
+C51 COMPILER V9.60.0.0   1602                                                              05/10/2022 23:39:21 PAGE 2   
+
+  55   1              addr = 0x40 + x;
+  56   1          
+  57   1          Lcd1602_Write_Cmd(addr|0x80);
+  58   1      }
+  59          
+  60          // 函数功能是：从坐标(x,y)开始显示字符串str
+  61          // 注意这个函数不能跨行显示，因为显存地址是不连续的
+  62          // 其实我们可以封装出一个能够折行显示的函数的
+  63          void LcdShowStr(unsigned char x,unsigned char y,unsigned char *str)     //显示字符串
+  64          {
+  65   1          LcdSetCursor(x,y);      //当前字符的坐标
+  66   1          while(*str != '\0')
+  67   1          {
+  68   2              Lcd1602_Write_Data(*str++);
+  69   2          }
+  70   1      }
+  71          
+  72          // 初始化LCD，使之能够开始正常工作
+  73          void InitLcd1602(void)              //1602初始化
+  74          {
+  75   1          Lcd1602_Write_Cmd(0x38);    //打开，5*8,8位数据
+  76   1          Lcd1602_Write_Cmd(0x0c);    // 打开显示并且无光标
+  77   1      //      Lcd1602_Write_Cmd(0x0f);        // 打开显示并且光标闪烁
+  78   1          Lcd1602_Write_Cmd(0x06);
+  79   1          Lcd1602_Write_Cmd(0x01);    //清屏   
+  80   1      }
+  81          
+  82          // 显示类似于24.5这种的double类型的数字
+  83          void LcdShowDouble(unsigned char x, unsigned char y, double d)     
+  84          {
+  85   1              // 第一步：将double d转成字符串str
+  86   1              unsigned char str[7] = "";
+  87   1              memset(str, 0, sizeof(str));
+  88   1              sprintf(str, "%5.2f", d);
+  89   1              
+  90   1              // uart
+  91   1              printf("LcdShowDouble: %f\r\n", d);
+  92   1              // 第二步：显示str
+  93   1              LcdShowStr(x, y, str);
+  94   1      }
+  95          
+  96          void LcdShowTime(struct time_t mytime)
+  97          {
+  98   1              unsigned char str[17] = "";
+  99   1              printf("%4d%02d%02d-%02d%02d%02d-%d\r\n", mytime.year, mytime.mon, mytime.date, mytime.hour, mytime.min, 
+             -mytime.sec, mytime.day);
+ 100   1              
+ 101   1              sprintf(str, "%4d%02d%02d-%02d%02d%02d-%d", mytime.year, mytime.mon, mytime.date, mytime.hour, mytime.min
+             -, mytime.sec, mytime.day);
+ 102   1              LcdShowStr(0, 0, str);
+ 103   1              
+ 104   1              printf("LcdShowTime: %s\r\n", str);
+ 105   1      }       
+ 106          
+ 107          // 在LCD上显示一个1-16的数字
+ 108          void LcdShowInt(unsigned char x, unsigned char y, unsigned char num)
+ 109          {
+ 110   1              unsigned char str[3] = {0};
+ 111   1              sprintf(str, "%d", num);
+ 112   1              LcdShowStr(x, y, str);
+ 113   1      }
+ 114          
+C51 COMPILER V9.60.0.0   1602                                                              05/10/2022 23:39:21 PAGE 3   
+
+ 115          
+ 116          
+ 117          // 设置LCD到普通模式（不显示光标）
+ 118          void LcdNormalMode(void)
+ 119          {
+ 120   1              Lcd1602_Write_Cmd(0x0C);        // 00001100
+ 121   1      }
+ 122          
+ 123          // 设置LCD到调整模式（显示光标，并且光标闪烁）
+ 124          void LcdAjustMode(void)
+ 125          {
+ 126   1              Lcd1602_Write_Cmd(0x0f);
+ 127   1      }
+
+
+MODULE INFORMATION:   STATIC OVERLAYABLE
+   CODE SIZE        =    423    ----
+   CONSTANT SIZE    =    132    ----
+   XDATA SIZE       =   ----    ----
+   PDATA SIZE       =   ----    ----
+   DATA SIZE        =   ----      47
+   IDATA SIZE       =   ----    ----
+   BIT SIZE         =   ----    ----
+END OF MODULE INFORMATION.
+
+
+C51 COMPILATION COMPLETE.  0 WARNING(S),  0 ERROR(S)
