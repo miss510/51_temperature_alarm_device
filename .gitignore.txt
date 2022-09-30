@@ -1,0 +1,6 @@
+# 屏蔽test.ignore文件夹
+test.ignore/
+
+#python缓存文件  可能是.pyc  .pyo  .pyd
+*.py[cod]
+
